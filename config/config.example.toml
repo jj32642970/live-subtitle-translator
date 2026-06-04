@@ -1,0 +1,46 @@
+[audio]
+# "input" 表示麦克风输入，"loopback" 表示采集当前 Windows 播放设备的声音，
+# 不需要虚拟声卡软件。
+mode = "input"
+# 不填写 device 时使用系统默认设备。可运行：
+#   python app.py --list-devices
+# 查看可用设备索引。
+sample_rate = 16000
+segment_seconds = 4.0
+
+[recognition]
+# 使用 "auto" 让 Whisper 自动识别语言，也可以手动指定语言代码：
+# en, ja, ko, zh, fr, de, es, ru, ar, pt, it, vi, th, etc.
+source_language = "auto"
+model_size = "small"
+device = "cpu"
+compute_type = "int8"
+
+[translation]
+target_language = "zh"
+show_original = true
+
+# OpenAI 兼容的 chat completions 接口。api_key 为空时不调用机器翻译，
+# 页面会直接显示识别到的原文。
+api_base = "https://api.openai.com/v1"
+api_key = ""
+model = "gpt-4.1-mini"
+# 可选：补充视频/直播场景，帮助模型选择更准确的译法。
+# 示例："这是俄罗斯游戏直播，包含俚语、选手名和战队名。"
+context_prompt = ""
+
+[output]
+# 每条完整字幕保存为：
+# 原文一行
+# 译文一行
+transcript_path = "data/transcript.txt"
+append_blank_line = true
+# 等到完整句后再保存和推送到网页；如果一直没有句尾，会按超时时间强制输出。
+complete_sentence_timeout_seconds = 8.0
+max_sentence_chars = 320
+min_sentence_chars = 8
+
+[server]
+host = "127.0.0.1"
+http_port = 8080
+ws_port = 8765

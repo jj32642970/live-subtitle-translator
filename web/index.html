@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>实时字幕翻译器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+      background: transparent;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: end center;
+      background: #101214;
+      color: #f7f8f8;
+      overflow: hidden;
+    }
+
+    .stage {
+      width: min(1180px, 96vw);
+      padding: 0 16px 40px;
+    }
+
+    .subtitle {
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+      text-align: center;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.85);
+    }
+
+    .translated {
+      max-width: 100%;
+      padding: 10px 18px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.68);
+      font-size: clamp(28px, 5vh, 56px);
+      line-height: 1.22;
+      font-weight: 800;
+      overflow-wrap: anywhere;
+    }
+
+    .original {
+      max-width: 100%;
+      padding: 7px 14px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.48);
+      color: #d9e4e8;
+      font-size: clamp(16px, 2.6vh, 28px);
+      line-height: 1.25;
+      overflow-wrap: anywhere;
+    }
+
+    .status {
+      position: fixed;
+      top: 14px;
+      left: 14px;
+      padding: 6px 10px;
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.58);
+      color: #b6c4c9;
+      font-size: 13px;
+    }
+
+    body.obs {
+      background: transparent;
+    }
+  </style>
+</head>
+<body>
+  <div id="status" class="status">连接中</div>
+  <main class="stage">
+    <section class="subtitle" aria-live="polite">
+      <div id="translated" class="translated">等待字幕...</div>
+      <div id="original" class="original"></div>
+    </section>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    if (params.get("transparent") === "1") {
+      document.body.classList.add("obs");
+    }
+
+    const translated = document.getElementById("translated");
+    const original = document.getElementById("original");
+    const status = document.getElementById("status");
+    const wsPort = params.get("ws") || "8765";
+    let reconnectTimer = null;
+
+    function connect() {
+      const socket = new WebSocket(`ws://${location.hostname}:${wsPort}`);
+      status.textContent = "连接中";
+
+      socket.addEventListener("open", () => {
+        status.textContent = "已连接";
+      });
+
+      socket.addEventListener("message", (event) => {
+        const data = JSON.parse(event.data);
+        translated.textContent = data.translation || data.text || "";
+        original.textContent = data.show_original ? data.text || "" : "";
+        original.style.display = original.textContent ? "block" : "none";
+      });
+
+      socket.addEventListener("close", () => {
+        status.textContent = "已断开";
+        clearTimeout(reconnectTimer);
+        reconnectTimer = setTimeout(connect, 1200);
+      });
+
+      socket.addEventListener("error", () => {
+        socket.close();
+      });
+    }
+
+    connect();
+  </script>
+</body>
+</html>
