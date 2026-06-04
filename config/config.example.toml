@@ -44,3 +44,15 @@ min_sentence_chars = 8
 host = "127.0.0.1"
 http_port = 8080
 ws_port = 8765
+
+[overlay]
+# 启动时打开透明悬浮字幕窗；网页模式仍然保留。
+enabled = true
+x = 80
+y = 760
+width = 1200
+height = 180
+opacity = 0.92
+translation_font_size = 34
+original_font_size = 18
+show_original = true

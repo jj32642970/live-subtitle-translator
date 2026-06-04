@@ -12,6 +12,8 @@ status.bat  查看服务状态和最近日志
 
 脚本会避免重复启动。如果已有服务在运行，再次启动会直接提示 `Already running`。
 
+启动后会自动打开透明悬浮字幕窗。悬浮窗可拖动，按 `Esc` 只关闭悬浮窗，不会停止后台翻译服务。
+
 ## 页面地址
 
 实时字幕页面：
@@ -61,6 +63,9 @@ context_prompt = "这里填写视频场景说明。"
 
 [output]
 transcript_path = "data/transcript.txt"
+
+[overlay]
+enabled = true
 ```
 
 `context_prompt` 用于告诉翻译模型当前内容是什么场景，例如游戏直播、体育采访、会议讨论等。

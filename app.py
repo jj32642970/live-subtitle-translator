@@ -65,6 +65,19 @@ class ServerConfig:
 
 
 @dataclass
+class OverlayConfig:
+    enabled: bool = True
+    x: int = 80
+    y: int = 760
+    width: int = 1200
+    height: int = 180
+    opacity: float = 0.92
+    translation_font_size: int = 34
+    original_font_size: int = 18
+    show_original: bool = True
+
+
+@dataclass
 class OutputConfig:
     transcript_path: str = "data/transcript.txt"
     append_blank_line: bool = True
@@ -79,6 +92,7 @@ class AppConfig:
     recognition: RecognitionConfig
     translation: TranslationConfig
     server: ServerConfig
+    overlay: OverlayConfig
     output: OutputConfig
 
 
@@ -92,6 +106,7 @@ def load_config(path: Path | None) -> AppConfig:
         recognition=RecognitionConfig(**raw.get("recognition", {})),
         translation=TranslationConfig(**raw.get("translation", {})),
         server=ServerConfig(**raw.get("server", {})),
+        overlay=OverlayConfig(**raw.get("overlay", {})),
         output=OutputConfig(**raw.get("output", {})),
     )
 
@@ -99,6 +114,7 @@ def load_config(path: Path | None) -> AppConfig:
 class SubtitleHub:
     def __init__(self) -> None:
         self.clients: set[Any] = set()
+        self.local_listeners: list[Any] = []
         self.last_payload: dict[str, Any] | None = None
 
     async def register(self, websocket: Any) -> None:
@@ -109,8 +125,16 @@ class SubtitleHub:
     async def unregister(self, websocket: Any) -> None:
         self.clients.discard(websocket)
 
+    def add_local_listener(self, listener: Any) -> None:
+        self.local_listeners.append(listener)
+
     async def publish(self, payload: dict[str, Any]) -> None:
         self.last_payload = payload
+        for listener in tuple(self.local_listeners):
+            try:
+                listener(payload)
+            except Exception as exc:
+                print(f"[本地字幕监听器错误] {exc}")
         if not self.clients:
             return
         message = json.dumps(payload, ensure_ascii=False)
@@ -147,6 +171,130 @@ def start_http_server(host: str, port: int) -> ThreadingHTTPServer:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     return server
+
+
+def start_overlay_window(hub: SubtitleHub, cfg: OverlayConfig, server_cfg: ServerConfig) -> None:
+    if not cfg.enabled:
+        return
+
+    updates: queue.Queue[dict[str, Any]] = queue.Queue()
+    hub.add_local_listener(lambda payload: updates.put(payload))
+
+    def run_window() -> None:
+        try:
+            import tkinter as tk
+        except ImportError:
+            print("悬浮窗启动失败：当前 Python 没有 tkinter。")
+            return
+
+        transparent_color = "#010101"
+        root = tk.Tk()
+        root.title("实时字幕悬浮窗")
+        root.geometry(f"{cfg.width}x{cfg.height}+{cfg.x}+{cfg.y}")
+        root.overrideredirect(True)
+        root.attributes("-topmost", True)
+        root.attributes("-alpha", max(0.2, min(cfg.opacity, 1.0)))
+        root.configure(bg=transparent_color)
+        try:
+            root.attributes("-transparentcolor", transparent_color)
+        except tk.TclError:
+            pass
+
+        frame = tk.Frame(root, bg=transparent_color)
+        frame.pack(fill="both", expand=True)
+
+        def close_tool() -> None:
+            print("已通过悬浮窗关闭按钮退出。")
+            root.destroy()
+            os._exit(0)
+
+        subtitle_panel = tk.Frame(root, bg="#000000")
+        subtitle_panel.place(relx=0.5, rely=1.0, anchor="s", relwidth=0.96)
+
+        control_row = tk.Frame(subtitle_panel, bg="#000000", height=30)
+        control_row.pack(side="top", fill="x")
+        control_row.pack_propagate(False)
+
+        close_button = tk.Button(
+            control_row,
+            text="×",
+            command=close_tool,
+            fg="#ffffff",
+            bg="#8b1e2d",
+            activeforeground="#ffffff",
+            activebackground="#b3263a",
+            relief="flat",
+            font=("Microsoft YaHei UI", 13, "bold"),
+            width=4,
+            cursor="hand2",
+        )
+        close_button.config(text="X")
+        close_button.pack(side="right", fill="y")
+
+        captions_frame = tk.Frame(subtitle_panel, bg="#000000")
+        captions_frame.pack(side="top", fill="x")
+
+        translated_label = tk.Label(
+            captions_frame,
+            text="等待字幕...",
+            fg="#ffffff",
+            bg="#000000",
+            font=("Microsoft YaHei UI", cfg.translation_font_size, "bold"),
+            wraplength=max(200, cfg.width - 80),
+            justify="center",
+            padx=18,
+            pady=8,
+        )
+        translated_label.pack(side="bottom", fill="x")
+
+        original_label = tk.Label(
+            captions_frame,
+            text="",
+            fg="#dbe8ee",
+            bg="#000000",
+            font=("Microsoft YaHei UI", cfg.original_font_size),
+            wraplength=max(200, cfg.width - 100),
+            justify="center",
+            padx=16,
+            pady=6,
+        )
+        original_label.pack(side="bottom", fill="x")
+
+        drag_start = {"x": 0, "y": 0}
+
+        def start_drag(event: Any) -> None:
+            drag_start["x"] = event.x
+            drag_start["y"] = event.y
+
+        def drag(event: Any) -> None:
+            x = root.winfo_x() + event.x - drag_start["x"]
+            y = root.winfo_y() + event.y - drag_start["y"]
+            root.geometry(f"+{x}+{y}")
+
+        def poll_updates() -> None:
+            latest = None
+            while True:
+                try:
+                    latest = updates.get_nowait()
+                except queue.Empty:
+                    break
+            if latest:
+                translated_label.config(text=latest.get("translation") or latest.get("text") or "")
+                if cfg.show_original and latest.get("text"):
+                    original_label.config(text=latest.get("text") or "")
+                else:
+                    original_label.config(text="")
+            root.after(100, poll_updates)
+
+        root.bind("<ButtonPress-1>", start_drag)
+        root.bind("<B1-Motion>", drag)
+        root.bind("<Escape>", lambda _event: root.destroy())
+        poll_updates()
+        print("悬浮字幕窗已打开。可拖动窗口，按 Esc 关闭悬浮窗；点右上角 × 退出整个工具。")
+        root.mainloop()
+
+    thread = threading.Thread(target=run_window, daemon=True)
+    thread.start()
 
 
 def ensure_port_available(host: str, port: int) -> None:
@@ -565,9 +713,12 @@ async def main() -> None:
         ensure_port_available(cfg.server.host, cfg.server.http_port)
         ensure_port_available(cfg.server.host, cfg.server.ws_port)
         start_http_server(cfg.server.host, cfg.server.http_port)
+        start_overlay_window(hub, cfg.overlay, cfg.server)
         print("启动检查通过：没有发现重复运行实例，端口可用。")
         print(f"字幕页面：http://{cfg.server.host}:{cfg.server.http_port}")
         print(f"OBS 透明背景页面：http://{cfg.server.host}:{cfg.server.http_port}?transparent=1")
+        if cfg.overlay.enabled:
+            print("悬浮窗模式：已启用。")
         print(f"字幕保存文件：{resolve_output_path(cfg.output.transcript_path)}")
 
         ws_task = asyncio.create_task(run_websocket_server(hub, cfg.server.host, cfg.server.ws_port))

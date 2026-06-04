@@ -1,6 +1,6 @@
 # 实时字幕翻译器
 
-把电脑正在播放的声音识别成字幕，并翻译成中文。网页用于实时展示，`data/transcript.txt` 用于事后查看完整句翻译。
+把电脑正在播放的声音识别成字幕，并翻译成中文。默认启动透明悬浮字幕窗，网页模式仍然保留，`data/transcript.txt` 用于事后查看完整句翻译。
 
 ## 目录结构
 
@@ -61,6 +61,9 @@ context_prompt = "这里填写视频/直播场景说明，帮助翻译更准确�
 
 [output]
 transcript_path = "data/transcript.txt"
+
+[overlay]
+enabled = true
 ```
 
 ## 手动运行
